@@ -1,0 +1,185 @@
+#Mateusz Machowski 2016-2017
+
+#reverse polish notation conversion, as per lab with added XOR functionality
+procedure ONP(w)
+	while w ?:= 2(="(", tab(bal(")")), pos(-1))
+	w ? every p := bal('^')
+	if \p then return ONP(w[1:p]) || ONP(w[p+1:0]) || w[p]
+	# removed ! from bal(), because it made & have higher priority than |
+	w ? every p := bal('&|')
+	if \p then return ONP(w[1:p]) || ONP(w[p+1:0]) || w[p]
+	w ? every p := bal('>')
+	if \p then return ONP(w[1:p]) || ONP(w[p+1:0]) || w[p]
+	if w[1] == "~" then return ONP(w[2:0]) || w[1]
+	return w
+end
+
+#function for measuring values of input binary number, added T and F conversion, xor and implication values
+procedure calculate(logic_expr, binary)
+	logic_expr := map(logic_expr, cset(logic_expr) ** &lcase, binary)
+	s := []
+	every e := !logic_expr do {
+		if e == !"01" then push(s, e)
+		if e == "T" then push(s, "1")
+		if e == "F" then push(s, "0")
+		else case e of {
+			"~" : push(s, 1-pop(s))
+			"^" : push(s, ixor(pop(s), pop(s)))
+			"&" : push(s, iand(pop(s), pop(s)))
+			"|" : push(s, ior(pop(s), pop(s)))
+			">" : push(s, ior(pop(s), 1-pop(s)))
+		}
+	}
+	return pop(s)
+end
+
+#generate all binary numbers of n length
+procedure generate_binaries(n)
+	if n = 0 then suspend ""
+	else suspend !"01" || generate_binaries(n-1)
+end
+
+#---------------------------------------------------------------------------------
+
+#procedures for parsing input function, as per lecture 5 slides "Rozpoznawanie języka"
+procedure is_correct(w)
+	if w ? {W() & pos(0)} then return w
+end
+
+procedure W()
+	suspend S() | (S() || = "|" || W())
+end
+
+procedure S()
+	suspend C() | (C() || = "&" || S())
+end
+
+procedure C()
+	suspend XOR() | (XOR() || = ">" || C())
+end
+#added xor to parsing
+procedure XOR()
+	suspend I() | (I() || = "^" || XOR())
+end
+#added TF
+procedure I()
+	suspend = (!&lcase) | (="(" || W() || =")") | (="~" || W()) | (=!"TF")
+end
+
+#-----------------------------------------------------------------------------
+
+#connect two minterms
+procedure connect(s1, s2)
+	return_flag := 0
+	every i := 1 to *s1 do{
+		if s1[i]~==s2[i] then {
+				s1[i] := "_"
+				return_flag +:= 1
+		}
+	}
+	if return_flag = 1 then return s1
+end
+
+#main function for reducing given minterms
+procedure reduce(s)
+	s2 := set()
+	b := 0
+	every v1 := !s do{
+		a := 0
+		every v2 := !s do
+			if insert(s2, connect(v1,v2)) then a := b := 1
+			if a = 0 then insert(s2,v1)
+	}
+	if b = 1 then return reduce(s2)
+	else return s2
+end
+
+#------------------------------------------------------------------------
+
+#converting reduced minterms to logic function form
+#sadly i didn't manage to implement reduction to xor and implication
+#however i am confident that this CAN be done using this method, just nor sure how
+procedure write_expr(s, variables)
+	expr:= ""
+	every v := !s do {
+		and_flag := 0
+		every i := 1 to *v do{
+			if v[i] == "_" then next
+			if v[i] == "0" then {
+				if and_flag = 1 then expr||:="&"
+				and_flag := 1
+				expr||:="~" || variables[i]
+			}
+			if v[i] == "1" then {
+				if and_flag = 1 then expr||:="&"
+				and_flag := 1
+				expr||:=variables[i]
+			}
+		}
+	expr||:="|"
+	}
+	return expr[1:*expr]
+end
+
+#------------------------------------------------------------------------------
+# main
+
+procedure main()
+
+	while logic_expr := read() do {
+		minterms := set()
+
+		#removing spaces from input
+		initial_function := ""
+		every i:=1 to *logic_expr do {
+			if logic_expr[i] ~== " " then initial_function ||:= logic_expr[i]
+		}
+
+		#keeping the initial function for further use
+		logic_expr := initial_function
+
+		#checking if given function is correct
+		if not is_correct(logic_expr) then {
+						write("ERROR")
+						next
+		}
+
+		#changing function form to reverse polish notation
+		logic_expr := ONP(logic_expr)
+
+		#getting the amount of arguments by intersecting the lcase set and our function, *gives amount of elements
+		arguments := *(logic_expr**&lcase)
+
+		#counter for amount of minterms that are relevant to output
+		counter := 0
+		every binary := generate_binaries(arguments) do {
+			if calculate(logic_expr, binary) == 1 then {
+					insert(minterms, binary)
+					counter +:= 1
+			}
+		}
+
+		#if for all minterms the function is 0, then we return False
+		if counter = 0 then {
+			write("F")
+			next
+		}
+		#and if for all minterms the function is 1, we return True
+		if counter = 2 ^ arguments then {
+			write("T")
+			next
+		}
+
+		#reducing minterms as per Quin - McCluskey algorithm, TODO - add XOR and Implication
+		calculation := reduce(minterms)
+
+		#getting the lcase characters of input function, so that the return has the same characters
+		variables := logic_expr**&lcase
+		reduced_function := ""
+
+		#converting reduced minterms to output function
+		reduced_function ||:= write_expr(calculation, variables)
+		# checking if our algorithm gave us a function smaller than the inital input
+		if *reduced_function < *initial_function then write(reduced_function) else write(initial_function)
+	}
+end
